@@ -140,25 +140,43 @@ async def _analyze_batch(
         model,
     )
 
+    from copilot.types import SessionConfig, MessageOptions
+
+    session = await client.create_session(SessionConfig(model=model))
+
     content_parts: list[str] = []
 
-    async def on_event(event: dict) -> None:
-        event_type = event.get("type", "")
+    def on_event(event: Any) -> None:
+        event_type = getattr(event, "type", "")
         if event_type == "assistant.message_delta":
-            delta = event.get("delta", "")
+            delta = getattr(event, "delta", "")
             if delta:
                 content_parts.append(delta)
 
-    session = await client.new_session(model=model)
-    session.on_event = on_event
+    session.on(on_event)
 
+    # Build the content string from messages (system + user with images)
+    prompt_parts: list[str] = []
     for msg in messages:
-        await session.send_message(msg)
+        if isinstance(msg.get("content"), str):
+            prompt_parts.append(msg["content"])
+        elif isinstance(msg.get("content"), list):
+            for part in msg["content"]:
+                if part.get("type") == "text":
+                    prompt_parts.append(part["text"])
 
-    # Wait for the session to become idle
-    await session.wait_for_idle()
+    # Send with images as content
+    user_msg = messages[-1]  # The user message with images
+    result = session.send_and_wait(
+        MessageOptions(content=user_msg["content"]),
+        timeout=120.0,
+    )
 
-    raw_response = "".join(content_parts)
+    if result and hasattr(result, "content"):
+        raw_response = result.content
+    else:
+        raw_response = "".join(content_parts)
+
     return _parse_issues_response(raw_response, pages)
 
 
