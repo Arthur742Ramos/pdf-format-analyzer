@@ -39,17 +39,41 @@ def _run_scan(
     source_dir: Path | None,
     apply_fix: bool,
     config: PFAConfig,
+    *,
+    strategy: str = "full",
+    log_path: Path | None = None,
+    sample_rate: int = 10,
 ) -> ScanReport:
     """Core scan logic shared by scan and report commands."""
     from pdf_format_analyzer.analyzer import analyze_pages_sync
     from pdf_format_analyzer.fixer import apply_fixes
     from pdf_format_analyzer.mapper import map_issues
-    from pdf_format_analyzer.renderer import get_page_count, render_pages
+    from pdf_format_analyzer.renderer import get_page_count, render_pages, render_specific_pages
+    from pdf_format_analyzer.smart_scan import smart_page_selection
 
     total_pages = get_page_count(pdf_path)
 
-    with console.status("[bold green]Rendering PDF pages..."):
-        pages = render_pages(pdf_path, dpi=config.dpi, max_pages=config.max_pages)
+    # Determine pages to scan
+    if strategy != "full":
+        with console.status("[bold cyan]Selecting pages to scan..."):
+            selected_pages = smart_page_selection(
+                pdf_path,
+                log_path=log_path,
+                source_dir=source_dir,
+                strategy=strategy,
+                sample_rate=sample_rate,
+            )
+        console.print(
+            f"[cyan]Strategy '{strategy}':[/cyan] scanning {len(selected_pages)}"
+            f" / {total_pages} pages"
+        )
+        with console.status("[bold green]Rendering selected pages..."):
+            pages = render_specific_pages(pdf_path, selected_pages, dpi=config.dpi)
+            if config.max_pages and len(pages) > config.max_pages:
+                pages = pages[: config.max_pages]
+    else:
+        with console.status("[bold green]Rendering PDF pages..."):
+            pages = render_pages(pdf_path, dpi=config.dpi, max_pages=config.max_pages)
 
     with console.status("[bold blue]Analyzing pages with vision LLM..."):
         issues = analyze_pages_sync(pages, config)
@@ -61,12 +85,24 @@ def _run_scan(
         with console.status("[bold yellow]Applying auto-fixes..."):
             fixes = apply_fixes(mapped, source_dir)
 
+    # Collect log warnings if a log file was provided
+    log_warnings_list = []
+    if log_path is not None:
+        from pdf_format_analyzer.log_parser import parse_latex_log
+
+        try:
+            log_warnings_list = parse_latex_log(log_path)
+        except FileNotFoundError:
+            pass
+
     report = ScanReport(
         pdf_path=str(pdf_path),
         total_pages=total_pages,
         issues=mapped,
         fixes_applied=fixes,
         pages_scanned=len(pages),
+        scan_strategy=strategy,
+        log_warnings=log_warnings_list,
     )
     report.compute_counts()
     return report
@@ -103,6 +139,18 @@ def scan(
         Optional[Path],
         typer.Option("--output", "-o", help="Output file path (default: stdout)"),
     ] = None,
+    strategy: Annotated[
+        str,
+        typer.Option("--strategy", help="Scan strategy: auto, log, diff, sample, full"),
+    ] = "full",
+    log: Annotated[
+        Optional[Path],
+        typer.Option("--log", help="LaTeX .log file for log-guided scanning"),
+    ] = None,
+    sample_rate: Annotated[
+        int,
+        typer.Option("--sample-rate", help="Every Nth page for sample strategy"),
+    ] = 10,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logging"),
@@ -119,6 +167,15 @@ def scan(
         console.print("[red]Error:[/red] --fix requires --source directory")
         raise typer.Exit(1)
 
+    if strategy not in ("auto", "log", "diff", "sample", "full"):
+        console.print(f"[red]Error:[/red] Unknown strategy: {strategy}")
+        raise typer.Exit(1)
+
+    # Default to auto when --log is provided but no explicit strategy
+    effective_strategy = strategy
+    if log is not None and strategy == "full":
+        effective_strategy = "auto"
+
     config = PFAConfig(
         dpi=dpi,
         batch_size=batch_size,
@@ -127,7 +184,15 @@ def scan(
         verbose=verbose,
     )
 
-    report = _run_scan(pdf_path, source, fix, config)
+    report = _run_scan(
+        pdf_path,
+        source,
+        fix,
+        config,
+        strategy=effective_strategy,
+        log_path=log,
+        sample_rate=sample_rate,
+    )
 
     # Output JSON report
     report_json = report.model_dump_json(indent=2)

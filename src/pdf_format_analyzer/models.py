@@ -92,6 +92,19 @@ class Fix(BaseModel):
     description: str
 
 
+class LogWarning(BaseModel):
+    """A warning extracted from a LaTeX .log file."""
+
+    line_number: int = Field(ge=0, description="Line number in the .tex source (0 if unknown)")
+    page_number: Optional[int] = Field(
+        default=None, ge=1, description="Page number where the warning occurred"
+    )
+    warning_type: str = Field(description="Type: overfull_hbox, underfull_hbox, overfull_vbox, underfull_vbox, font, missing_ref")
+    severity: Severity
+    amount: Optional[float] = Field(default=None, description="Overflow/underflow amount in pt")
+    message: str = Field(description="Original warning message from the log")
+
+
 class ScanReport(BaseModel):
     """Top-level scan report."""
 
@@ -103,6 +116,8 @@ class ScanReport(BaseModel):
     error_count: int = 0
     warning_count: int = 0
     info_count: int = 0
+    scan_strategy: Optional[str] = None
+    log_warnings: list[LogWarning] = Field(default_factory=list)
 
     def compute_counts(self) -> None:
         """Recompute severity counts from issues list."""

@@ -63,6 +63,36 @@ pfa report thesis.pdf --source ./src/
 pfa scan thesis.pdf --max-pages 10
 ```
 
+### Smart Scanning (log-guided)
+
+Instead of scanning all 548 pages of a book, scan only the 4 pages that have LaTeX warnings:
+
+```bash
+# Log-guided: only scan pages with warnings from the .log file
+pfa scan thesis.pdf --log thesis.log --strategy log
+
+# Auto mode (default when --log is provided): tries log → diff → full
+pfa scan thesis.pdf --log thesis.log --source ./src/
+
+# Sample mode: every 20th page for a quick spot-check
+pfa scan thesis.pdf --strategy sample --sample-rate 20
+
+# Full scan: current default behavior
+pfa scan thesis.pdf --strategy full
+```
+
+**Strategies:**
+
+| Strategy | Pages Scanned | Use Case |
+|----------|---------------|----------|
+| `full`   | All pages     | Default — thorough scan |
+| `log`    | Only pages with warnings | Best for iterative fixing: 4 pages vs 548 |
+| `auto`   | Depends on inputs | Smart fallback: log → diff → full |
+| `sample` | Every Nth page | Quick spot-check on large PDFs |
+| `diff`   | Pages affected by recent changes | CI/CD optimization (requires synctex) |
+
+**Cost savings example:** A 548-page book with 4 overfull `\hbox` warnings costs ~$5–15 for a full scan. Log-guided scanning reduces this to ~$0.10 by only analyzing the 4 affected pages.
+
 ## CLI Reference
 
 ### `pfa scan`
@@ -80,6 +110,9 @@ Options:
   --model, -m TEXT        Vision model to use [default: gpt-4.1]
   --max-pages INT         Maximum pages to scan
   --output, -o PATH       Output file (default: stdout)
+  --strategy TEXT         Scan strategy: auto, log, diff, sample, full [default: full]
+  --log PATH              LaTeX .log file for log-guided scanning
+  --sample-rate INT       Every Nth page for sample strategy [default: 10]
   --verbose, -v           Enable verbose logging
 ```
 
@@ -109,8 +142,12 @@ Show the installed version.
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐
 │  PDF File   │────▶│   Renderer   │────▶│   Analyzer    │
 │             │     │  (PyMuPDF)   │     │ (Copilot SDK) │
-└─────────────┘     └──────────────┘     └───────┬───────┘
-                                                 │
+└─────────────┘     └──────▲───────┘     └───────┬───────┘
+                           │                     │
+┌─────────────┐     ┌──────┴───────┐             │
+│  .log File  │────▶│  Smart Scan  │             │
+│ (optional)  │     │ (log-guided) │             │
+└─────────────┘     └──────────────┘             │
                     ┌──────────────┐              │
                     │   SyncTeX    │◀─────────────┘
                     │   Mapper     │     ┌───────────────┐
@@ -122,11 +159,13 @@ Show the installed version.
                     └──────────────┘
 ```
 
-1. **Renderer** — Uses PyMuPDF to render each PDF page to a PNG image at the configured DPI.
-2. **Analyzer** — Sends page images to a vision LLM (via `github-copilot-sdk`) in batches. The LLM identifies formatting issues and returns structured JSON.
-3. **Mapper** — Parses `.synctex.gz` files to map page-level findings back to source `.tex` file and line number.
-4. **Fixer** — Applies automatic fixes for common patterns (wide diagrams → `\adjustbox`, long paths → `\allowbreak`).
-5. **Reporter** — Outputs results as JSON (for CI) or a rich terminal table.
+1. **Log Parser** (new) — Parses `.log` files to identify pages with warnings (overfull boxes, missing refs, etc.).
+2. **Smart Scan** (new) — Selects which pages to render based on strategy (log, diff, sample, full, auto).
+3. **Renderer** — Uses PyMuPDF to render each PDF page to a PNG image at the configured DPI.
+4. **Analyzer** — Sends page images to a vision LLM (via `github-copilot-sdk`) in batches. The LLM identifies formatting issues and returns structured JSON.
+5. **Mapper** — Parses `.synctex.gz` files to map page-level findings back to source `.tex` file and line number.
+6. **Fixer** — Applies automatic fixes for common patterns (wide diagrams → `\adjustbox`, long paths → `\allowbreak`).
+7. **Reporter** — Outputs results as JSON (for CI) or a rich terminal table.
 
 ## Issue Categories
 

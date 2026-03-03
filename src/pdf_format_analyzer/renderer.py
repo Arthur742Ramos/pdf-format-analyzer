@@ -74,6 +74,52 @@ def render_pages(
     return pages
 
 
+def render_specific_pages(
+    pdf_path: str | Path,
+    page_numbers: list[int],
+    *,
+    dpi: int = 150,
+) -> list[PageImage]:
+    """Render an arbitrary list of pages (1-based) from a PDF.
+
+    Unlike :func:`render_pages` which takes a contiguous range, this
+    accepts a sparse list of page numbers — ideal for log-guided scanning.
+    """
+    pdf_path = Path(pdf_path)
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+    doc = fitz.open(str(pdf_path))
+    total = doc.page_count
+
+    zoom = dpi / 72.0
+    matrix = fitz.Matrix(zoom, zoom)
+    pages: list[PageImage] = []
+
+    for num in page_numbers:
+        idx = num - 1
+        if idx < 0 or idx >= total:
+            logger.warning("Skipping out-of-range page %d (PDF has %d pages)", num, total)
+            continue
+        page = doc[idx]
+        pix = page.get_pixmap(matrix=matrix)
+        image_bytes = pix.tobytes("png")
+        pages.append(
+            PageImage(
+                page_number=num,
+                image_bytes=image_bytes,
+                width=pix.width,
+                height=pix.height,
+                dpi=dpi,
+            )
+        )
+        logger.debug("Rendered page %d (%dx%d)", num, pix.width, pix.height)
+
+    doc.close()
+    logger.info("Rendered %d specific pages at %d DPI", len(pages), dpi)
+    return pages
+
+
 def get_page_count(pdf_path: str | Path) -> int:
     """Return the total number of pages in a PDF."""
     doc = fitz.open(str(pdf_path))
