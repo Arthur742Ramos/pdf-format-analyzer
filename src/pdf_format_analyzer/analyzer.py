@@ -131,7 +131,15 @@ async def _analyze_batch(
     model: str,
 ) -> list[PageIssue]:
     """Analyze a batch of pages with the vision LLM."""
-    messages = _build_vision_messages(pages)
+    import tempfile
+    from pathlib import Path
+
+    from copilot.types import (
+        FileAttachment,
+        MessageOptions,
+        PermissionHandler,
+        SessionConfig,
+    )
 
     logger.info(
         "Analyzing %d pages (pages %s) with model %s",
@@ -140,42 +148,53 @@ async def _analyze_batch(
         model,
     )
 
-    from copilot.types import SessionConfig, MessageOptions
+    session = await client.create_session(
+        SessionConfig(
+            model=model,
+            on_permission_request=PermissionHandler.approve_all,
+        )
+    )
 
-    session = await client.create_session(SessionConfig(model=model))
+    # Save page images to temp files for attachment
+    tmp_files: list[Path] = []
+    attachments: list[FileAttachment] = []
+    for page in pages:
+        tmp = Path(tempfile.mktemp(suffix=".png", prefix=f"pfa_p{page.page_number}_"))
+        tmp.write_bytes(page.image_bytes)
+        tmp_files.append(tmp)
+        attachments.append(
+            FileAttachment(
+                type="file",
+                path=str(tmp),
+                displayName=f"page_{page.page_number}.png",
+            )
+        )
 
-    content_parts: list[str] = []
+    page_list = ", ".join(str(p.page_number) for p in pages)
+    prompt = (
+        SYSTEM_PROMPT
+        + f"\n\nAnalyze these {len(pages)} PDF page screenshot(s) (pages {page_list}) "
+        "for formatting issues. Examine every page carefully. "
+        "Return a JSON array of issues found. Each issue must have: "
+        '"page_number" (int), "severity" ("error"/"warning"/"info"), '
+        '"category" ("overfull_box"/"orphan"/"widow"/"cut_off"/"spacing"/"misalignment"/"other"), '
+        '"description" (string), "confidence" (0.0-1.0). '
+        "If no issues found on any page, return []."
+    )
 
-    def on_event(event: Any) -> None:
-        event_type = getattr(event, "type", "")
-        if event_type == "assistant.message_delta":
-            delta = getattr(event, "delta", "")
-            if delta:
-                content_parts.append(delta)
-
-    session.on(on_event)
-
-    # Build the content string from messages (system + user with images)
-    prompt_parts: list[str] = []
-    for msg in messages:
-        if isinstance(msg.get("content"), str):
-            prompt_parts.append(msg["content"])
-        elif isinstance(msg.get("content"), list):
-            for part in msg["content"]:
-                if part.get("type") == "text":
-                    prompt_parts.append(part["text"])
-
-    # Send with images as content
-    user_msg = messages[-1]  # The user message with images
-    result = session.send_and_wait(
-        MessageOptions(content=user_msg["content"]),
+    result = await session.send_and_wait(
+        MessageOptions(prompt=prompt, attachments=attachments),
         timeout=120.0,
     )
 
-    if result and hasattr(result, "content"):
-        raw_response = result.content
-    else:
-        raw_response = "".join(content_parts)
+    # Cleanup temp files
+    for tmp in tmp_files:
+        tmp.unlink(missing_ok=True)
+
+    raw_response = ""
+    if result:
+        data = getattr(result, "data", result)
+        raw_response = getattr(data, "content", str(result))
 
     return _parse_issues_response(raw_response, pages)
 
