@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from pdf_format_analyzer.analyzer import _build_vision_messages, _parse_issues_response
 from pdf_format_analyzer.models import IssueCategory, PageImage, Severity

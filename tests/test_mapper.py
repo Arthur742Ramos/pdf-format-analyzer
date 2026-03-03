@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import gzip
-from pathlib import Path
-
-import pytest
 
 from pdf_format_analyzer.mapper import SyncTeXData, find_synctex_file, map_issues
 from pdf_format_analyzer.models import (

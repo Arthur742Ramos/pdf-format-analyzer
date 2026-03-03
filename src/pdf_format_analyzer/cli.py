@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -112,7 +110,7 @@ def _run_scan(
 def scan(
     pdf_path: Annotated[Path, typer.Argument(help="Path to the PDF file to analyze")],
     source: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--source", "-s", help="LaTeX source directory for synctex mapping"),
     ] = None,
     fix: Annotated[
@@ -128,15 +126,15 @@ def scan(
         typer.Option("--batch-size", "-b", help="Pages per LLM batch"),
     ] = 5,
     model: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--model", "-m", help="Vision model to use"),
     ] = None,
     max_pages: Annotated[
-        Optional[int],
+        int | None,
         typer.Option("--max-pages", help="Maximum pages to scan"),
     ] = None,
     output: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--output", "-o", help="Output file path (default: stdout)"),
     ] = None,
     strategy: Annotated[
@@ -144,7 +142,7 @@ def scan(
         typer.Option("--strategy", help="Scan strategy: auto, log, diff, sample, full"),
     ] = "full",
     log: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--log", help="LaTeX .log file for log-guided scanning"),
     ] = None,
     sample_rate: Annotated[
@@ -211,13 +209,13 @@ def scan(
 def report(
     pdf_path: Annotated[Path, typer.Argument(help="Path to the PDF file to analyze")],
     source: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option("--source", "-s", help="LaTeX source directory"),
     ] = None,
     dpi: Annotated[int, typer.Option("--dpi")] = 150,
     batch_size: Annotated[int, typer.Option("--batch-size", "-b")] = 5,
-    model: Annotated[Optional[str], typer.Option("--model", "-m")] = None,
-    max_pages: Annotated[Optional[int], typer.Option("--max-pages")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m")] = None,
+    max_pages: Annotated[int | None, typer.Option("--max-pages")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
     """Scan a PDF and display a rich terminal report."""

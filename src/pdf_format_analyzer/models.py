@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -62,7 +61,7 @@ class PageIssue(BaseModel):
     severity: Severity
     category: IssueCategory
     description: str
-    bounding_box: Optional[BoundingBox] = None
+    bounding_box: BoundingBox | None = None
     confidence: float = Field(default=0.8, ge=0, le=1)
 
 
@@ -71,14 +70,14 @@ class SourceLocation(BaseModel):
 
     file_path: Path
     line_number: int = Field(ge=1)
-    column: Optional[int] = None
+    column: int | None = None
 
 
 class MappedIssue(BaseModel):
     """A page issue mapped back to its source location."""
 
     issue: PageIssue
-    source: Optional[SourceLocation] = None
+    source: SourceLocation | None = None
 
 
 class Fix(BaseModel):
@@ -96,12 +95,12 @@ class LogWarning(BaseModel):
     """A warning extracted from a LaTeX .log file."""
 
     line_number: int = Field(ge=0, description="Line number in the .tex source (0 if unknown)")
-    page_number: Optional[int] = Field(
+    page_number: int | None = Field(
         default=None, ge=1, description="Page number where the warning occurred"
     )
     warning_type: str = Field(description="Type: overfull_hbox, underfull_hbox, overfull_vbox, underfull_vbox, font, missing_ref")
     severity: Severity
-    amount: Optional[float] = Field(default=None, description="Overflow/underflow amount in pt")
+    amount: float | None = Field(default=None, description="Overflow/underflow amount in pt")
     message: str = Field(description="Original warning message from the log")
 
 
@@ -116,7 +115,7 @@ class ScanReport(BaseModel):
     error_count: int = 0
     warning_count: int = 0
     info_count: int = 0
-    scan_strategy: Optional[str] = None
+    scan_strategy: str | None = None
     log_warnings: list[LogWarning] = Field(default_factory=list)
 
     def compute_counts(self) -> None:

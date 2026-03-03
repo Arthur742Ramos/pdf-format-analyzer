@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from pdf_format_analyzer.fixer import (
     apply_fixes,
     fix_overfull_equation,
